@@ -232,8 +232,15 @@ export class MCPCliApp {
       .command("save-command <server-name> <command>")
       .description("Save a command for a server to external config file")
       .action(async (serverName: string, command: string, cmdObj) => {
-        console.log(`Saving command to external config file: ${serverName} ${command}`);
-        const result = await saveCommandToExternalConfig(serverName, command);
+        console.log(
+          `Saving command to external config file: ${serverName} ${command}`
+        );
+        const result = await saveCommandToExternalConfig(
+          serverName,
+          command,
+          cmdObj.args,
+          cmdObj.env
+        );
 
         if (result.success) {
           console.log(`✅ ${result.message}`);
@@ -273,9 +280,15 @@ export class MCPCliApp {
   public run() {
     // Check environment variables
     if (!process.env.MCP_SETTINGS_PATH) {
-      console.warn("\n⚠️  Warning: MCP_SETTINGS_PATH environment variable not set");
-      console.warn("This environment variable is used to specify the path to the LLM (e.g., Claude) MCP service configuration file");
-      console.warn("To save commands to the LLM configuration file, please set this environment variable, for example:");
+      console.warn(
+        "\n⚠️  Warning: MCP_SETTINGS_PATH environment variable not set"
+      );
+      console.warn(
+        "This environment variable is used to specify the path to the LLM (e.g., Claude) MCP service configuration file"
+      );
+      console.warn(
+        "To save commands to the LLM configuration file, please set this environment variable, for example:"
+      );
       console.warn(
         'export MCP_SETTINGS_PATH="/Users/username/Library/Application Support/Claude/claude_desktop_config.json"\n'
       );

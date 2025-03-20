@@ -4,31 +4,24 @@ import { z } from "zod";
 import { promises as fs } from "node:fs";
 import { homedir } from "node:os";
 import path from "node:path";
-import fetch from "node-fetch";
 import { exec as execCb } from "node:child_process";
 import { promisify } from "node:util";
 import { npxFinder } from "npx-scope-finder";
 import {
   CallToolRequestSchema,
   ListToolsRequestSchema,
-  ToolSchema,
 } from "@modelcontextprotocol/sdk/types.js";
-import type {
-  MCPServerInfo,
-  MCPAutoInstallOptions,
-  OperationResult,
-  NpmPackageInfo,
-} from "./types.js";
+import type { MCPServerInfo, OperationResult } from "./types.js";
 
 const exec = promisify(execCb);
 
 /**
- * 简单的Zod转JSON Schema函数
+ * Simple Zod to JSON Schema conversion function
  */
 function simpleZodToJsonSchema(
   schema: z.ZodType<unknown>
 ): Record<string, unknown> {
-  // 为了简化，我们只处理基本类型
+  // For simplicity, we only handle basic types
   if (schema instanceof z.ZodString) {
     return { type: "string" };
   }
@@ -71,41 +64,41 @@ function simpleZodToJsonSchema(
     return simpleZodToJsonSchema(schema._def.innerType);
   }
 
-  // 默认返回
+  // Default return
   return { type: "object" };
 }
 
-// 设置路径
+// Set path
 const SETTINGS_PATH = path.join("mcp", "mcp_settings.json");
 
-// 服务器设置
+// Server settings
 let serverSettings: { servers: MCPServerInfo[] } = { servers: [] };
 
 /**
- * 预加载MCP包信息到本地注册文件中
+ * Preload MCP package information to local registry file
  */
 async function preloadMCPPackages(): Promise<void> {
   try {
-    // 从@modelcontextprotocol域获取所有可用包
+    // Get all available packages from @modelcontextprotocol domain
     const packages = await npxFinder("@modelcontextprotocol", {
       timeout: 15000,
       retries: 3,
       retryDelay: 1000,
     });
 
-    // 过滤和处理包信息
+    // Filter and process package information
     for (const pkg of packages) {
       if (!pkg.name || pkg.name === "@modelcontextprotocol/sdk") {
-        continue; // 跳过SDK本身
+        continue; // Skip SDK itself
       }
 
       try {
-        // 提取服务器类型（从包名中）
+        // Extract server type (from package name)
         const nameParts = pkg.name.split("/");
         const serverName = nameParts[nameParts.length - 1];
         const serverType = serverName.replace("mcp-", "");
 
-        // 构建服务器信息
+        // Build server information
         const serverInfo: MCPServerInfo = {
           name: pkg.name,
           repo: pkg.links?.repository || "",
@@ -114,36 +107,36 @@ async function preloadMCPPackages(): Promise<void> {
           keywords: [...(pkg.keywords || []), serverType, "mcp"],
         };
 
-        // 直接从npxFinder返回的数据中获取README内容并添加到serverInfo
+        // Get README content directly from npxFinder returned data and add to serverInfo
         if (pkg.original?.readme) {
           serverInfo.readme = pkg.original.readme;
         }
 
-        // 检查服务器是否已注册
+        // Check if server is already registered
         const existingServer = serverSettings.servers.find(
           (s) => s.name === pkg.name
         );
         if (!existingServer) {
           serverSettings.servers.push(serverInfo);
         } else {
-          // 更新现有服务器的readme（如果有的话）
+          // Update existing server's readme (if available)
           if (serverInfo.readme && !existingServer.readme) {
             existingServer.readme = serverInfo.readme;
           }
         }
       } catch (pkgError) {
-        // 静默处理包错误
+        // Silently handle package errors
       }
     }
 
-    // 保存更新后的设置
+    // Save updated settings
     await saveSettings();
   } catch (error) {
-    // 静默处理错误
+    // Silently handle errors
   }
 }
 
-// 创建MCP服务器实例
+// Create MCP server instance
 const server = new Server(
   {
     name: "mcp-auto-install",
@@ -156,13 +149,14 @@ const server = new Server(
   }
 );
 
-// 注册工具列表处理程序
+// Register tools list handler
 server.setRequestHandler(ListToolsRequestSchema, async () => {
   return {
     tools: [
       {
         name: "mcp_auto_install_getAvailableServers",
-        description: "获取可用的MCP服务器列表",
+        description:
+          "List all available MCP servers that can be installed. Returns a list of server names and their basic information. Use this to discover what MCP servers are available before installing or configuring them.",
         inputSchema: simpleZodToJsonSchema(
           z.object({
             random_string: z
@@ -173,63 +167,95 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
       },
       {
         name: "mcp_auto_install_removeServer",
-        description: "移除已注册的MCP服务",
+        description:
+          "Remove a registered MCP server from the local registry. This will unregister the server but won't uninstall it. Provide the exact server name to remove. Use getAvailableServers first to see registered servers.",
         inputSchema: simpleZodToJsonSchema(
           z.object({
-            serverName: z.string().describe("The name of the server to remove"),
+            serverName: z
+              .string()
+              .describe("The exact name of the server to remove from registry"),
           })
         ),
       },
       {
         name: "mcp_auto_install_configureServer",
-        description: "获取mcp服务配置帮助",
+        description:
+          "Get detailed configuration help for a specific MCP server. Provides README content, configuration instructions, and suggested commands. Optionally specify a purpose or specific configuration question.",
         inputSchema: simpleZodToJsonSchema(
           z.object({
             serverName: z
               .string()
-              .describe("The name of the server to configure"),
+              .describe("The exact name of the server to configure"),
             purpose: z
               .string()
-              .describe("What you want to do with the server")
+              .describe(
+                "Optional: Specific use case or purpose for the server configuration"
+              )
               .optional(),
             query: z
               .string()
-              .describe("Specific question about configuration")
+              .describe(
+                "Optional: Specific configuration question or parameter to get help with"
+              )
               .optional(),
           })
         ),
       },
       {
         name: "mcp_auto_install_getServerReadme",
-        description: "获取mcp服务的README内容",
+        description:
+          "Retrieve and display the full README documentation for a specific MCP server. This includes installation instructions, configuration options, and usage examples. Use this for detailed server information.",
         inputSchema: simpleZodToJsonSchema(
           z.object({
             serverName: z
               .string()
-              .describe("The name of the server to get README for"),
+              .describe(
+                "The exact name of the server to get README documentation for"
+              ),
           })
         ),
       },
       {
         name: "mcp_auto_install_saveNpxCommand",
-        description: "保存用户输入的npx命令到mcp配置文件",
+        description:
+          "Save an npx command configuration for an MCP server. This stores the command, arguments and environment variables in both the MCP settings and LLM configuration files. Use this to persist server-specific command configurations.",
         inputSchema: simpleZodToJsonSchema(
           z.object({
             serverName: z
               .string()
-              .describe("The name of the server to configure"),
-            commandInput: z
+              .describe(
+                "The exact name of the server to save command configuration for"
+              ),
+            command: z
               .string()
-              .describe("User input command (e.g., npx server-name arg1 arg2)"),
+              .describe(
+                "The main command to execute (e.g., 'npx', '@modelcontextprotocol/server-name')"
+              ),
+            args: z
+              .array(z.string())
+              .describe(
+                "Array of command arguments (e.g., ['--port', '3000', '--config', 'config.json'])"
+              ),
+            env: z
+              .record(z.string())
+              .describe(
+                "Environment variables object for the command (e.g., { 'NODE_ENV': 'production', 'DEBUG': 'true' })"
+              )
+              .optional(),
           })
         ),
       },
       {
         name: "mcp_auto_install_parseJsonConfig",
-        description: "解析用户发送的MCP服务器Json配置",
+        description:
+          "Parse and validate a JSON configuration string for MCP servers. This tool processes server configurations, validates their format, and merges them with existing configurations. Use this for bulk server configuration.",
         inputSchema: simpleZodToJsonSchema(
           z.object({
-            config: z.string().describe("用户发送的JSON配置字符串"),
+            config: z
+              .string()
+              .describe(
+                "JSON string containing server configurations in the format: { 'mcpServers': { 'serverName': { 'command': 'string', 'args': ['string'] } } }"
+              ),
           })
         ),
       },
@@ -237,7 +263,7 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
   };
 });
 
-// 注册工具调用处理程序
+// Register tool call handler
 server.setRequestHandler(CallToolRequestSchema, async (req) => {
   const { name, arguments: args = {} } = req.params;
 
@@ -248,13 +274,13 @@ server.setRequestHandler(CallToolRequestSchema, async (req) => {
         content: [
           {
             type: "text",
-            text: `获取到 ${servers.length} 个已搜索到的MCP服务器`,
+            text: `Found ${servers.length} MCP servers`,
           },
           {
             type: "text",
             text: `${servers
               .map((server) => server.name)
-              .join("\n")}\n 从其中找到名称类似的mcp服务`,
+              .join("\n")}\n Find similar MCP services from these`,
           },
         ],
       };
@@ -285,13 +311,13 @@ server.setRequestHandler(CallToolRequestSchema, async (req) => {
 
       const contentItems = [];
 
-      // 添加消息
+      // Add message
       contentItems.push({
         type: "text",
         text: result.message,
       });
 
-      // 添加说明（如果有）
+      // Add explanation (if available)
       if (result.explanation) {
         contentItems.push({
           type: "text",
@@ -299,15 +325,7 @@ server.setRequestHandler(CallToolRequestSchema, async (req) => {
         });
       }
 
-      // 添加建议命令（如果有）
-      if (result.suggestedCommand) {
-        contentItems.push({
-          type: "text",
-          text: `建议命令: ${result.suggestedCommand}`,
-        });
-      }
-
-      // 添加README内容（如果有）
+      // Add README content (if available)
       if (result.readmeContent) {
         contentItems.push({
           type: "text",
@@ -320,29 +338,31 @@ server.setRequestHandler(CallToolRequestSchema, async (req) => {
       };
     }
 
-    case "mcp_auto_install_getServerReadme": {
-      const result = await handleGetServerReadme(
-        args as unknown as { serverName: string }
-      );
+    // case "mcp_auto_install_getServerReadme": {
+    //   const result = await handleGetServerReadme(
+    //     args as unknown as { serverName: string }
+    //   );
 
-      return {
-        content: [
-          {
-            type: "text",
-            text: result.message,
-          },
-          {
-            type: "text",
-            text: result.readmeContent || "没有找到README内容。",
-          },
-        ],
-      };
-    }
+    //   return {
+    //     content: [
+    //       {
+    //         type: "text",
+    //         text: result.message,
+    //       },
+    //       {
+    //         type: "text",
+    //         text: result.readmeContent || "No README content found.",
+    //       },
+    //     ],
+    //   };
+    // }
 
     case "mcp_auto_install_saveNpxCommand": {
       const result = await saveCommandToExternalConfig(
         args.serverName as string,
-        args.commandInput as string
+        args.command as string,
+        args.args as string[],
+        args.env as Record<string, string>
       );
       return {
         content: [
@@ -364,12 +384,18 @@ server.setRequestHandler(CallToolRequestSchema, async (req) => {
             type: "text",
             text: result.message,
           },
-          ...(result.config ? [
-            {
-              type: "text",
-              text: `解析后的配置:\n${JSON.stringify(result.config, null, 2)}`,
-            },
-          ] : []),
+          ...(result.config
+            ? [
+                {
+                  type: "text",
+                  text: `Parsed configuration:\n${JSON.stringify(
+                    result.config,
+                    null,
+                    2
+                  )}`,
+                },
+              ]
+            : []),
         ],
       };
     }
@@ -380,65 +406,65 @@ server.setRequestHandler(CallToolRequestSchema, async (req) => {
 });
 
 /**
- * 初始化设置
+ * Initialize settings
  */
 async function initSettings(): Promise<void> {
   try {
-    // 创建设置目录
+    // Create settings directory
     const settingsDir = path.dirname(SETTINGS_PATH);
     await fs.mkdir(settingsDir, { recursive: true });
 
-    // 尝试加载现有设置
+    // Try to load existing settings
     try {
       const data = await fs.readFile(SETTINGS_PATH, "utf-8");
       serverSettings = JSON.parse(data);
     } catch (error) {
-      // 如果文件不存在，使用默认设置
+      // If file doesn't exist, use default settings
       serverSettings = { servers: [] };
-      // 保存默认设置
+      // Save default settings
       await saveSettings();
     }
   } catch (error) {
-    console.error("初始化设置失败:", error);
+    console.error("Failed to initialize settings:", error);
   }
 }
 
 /**
- * 保存设置
+ * Save settings
  */
 async function saveSettings(): Promise<void> {
   try {
-    // 确保目录存在
+    // Ensure directory exists
     const settingsDir = path.dirname(SETTINGS_PATH);
     await fs.mkdir(settingsDir, { recursive: true });
 
-    // 保存设置文件
+    // Save settings file
     await fs.writeFile(
       SETTINGS_PATH,
       JSON.stringify(serverSettings, null, 2),
       "utf-8"
     );
   } catch (error) {
-    console.error("保存设置失败:", error);
+    console.error("Failed to save settings:", error);
     throw new Error("Failed to save settings");
   }
 }
 
 /**
- * 查找服务器
+ * Find server
  */
 async function findServer(name: string): Promise<MCPServerInfo | undefined> {
-  // 确保设置已加载
+  // Ensure settings are loaded
   await initSettings();
   return serverSettings.servers.find((s) => s.name.includes(name));
 }
 
 /**
- * 从GitHub仓库URL获取npm包名
+ * Get npm package name from GitHub repository URL
  */
 async function getPackageNameFromRepo(repoUrl: string): Promise<string | null> {
   try {
-    // 首先尝试使用CLI方式和-r选项
+    // First try using CLI method with -r option
     try {
       const { stdout } = await exec(`npx npx-scope-finder find ${repoUrl}`);
       const trimmedOutput = stdout.trim();
@@ -446,16 +472,16 @@ async function getPackageNameFromRepo(repoUrl: string): Promise<string | null> {
         return trimmedOutput;
       }
     } catch (cliError) {
-      // 继续使用其他方法
+      // Continue with other methods
     }
 
-    // 提取GitHub路径
+    // Extract GitHub path
     const repoPath = extractGitHubPathFromUrl(repoUrl);
     if (!repoPath) {
       throw new Error(`Invalid GitHub repository URL: ${repoUrl}`);
     }
 
-    // 使用 npxFinder API 查找 @modelcontextprotocol 域下的所有可执行包
+    // Use npxFinder API to find all executable packages under @modelcontextprotocol domain
     try {
       const packages = await npxFinder("@modelcontextprotocol", {
         timeout: 10000,
@@ -463,7 +489,7 @@ async function getPackageNameFromRepo(repoUrl: string): Promise<string | null> {
         retryDelay: 1000,
       });
 
-      // 查找匹配 repo URL 的包
+      // Find package matching repo URL
       const matchingPackage = packages.find((pkg) =>
         pkg.links?.repository?.includes(repoPath)
       );
@@ -472,7 +498,7 @@ async function getPackageNameFromRepo(repoUrl: string): Promise<string | null> {
         return matchingPackage.name;
       }
 
-      // 如果没有找到匹配的包，尝试匹配名称
+      // If no matching package found, try matching by name
       const [owner, repo] = repoPath.split("/");
       const nameMatchingPackage = packages.find((pkg) =>
         pkg.name.endsWith(`/${repo}`)
@@ -482,14 +508,14 @@ async function getPackageNameFromRepo(repoUrl: string): Promise<string | null> {
         return nameMatchingPackage.name;
       }
     } catch (npmError) {
-      // 继续使用备用方法
+      // Continue with fallback methods
     }
 
-    // 备用方法：假设包名格式为 @modelcontextprotocol/repo
+    // Fallback method: assume package name format is @modelcontextprotocol/repo
     const repo = repoPath.split("/")[1];
     return `@modelcontextprotocol/${repo}`;
   } catch (error) {
-    // 如果上述方法失败，尝试从URL提取包名
+    // If above methods fail, try extracting package name from URL
     const parts = repoUrl.split("/");
     if (parts.length >= 2) {
       const repo = parts[parts.length - 1].replace(".git", "");
@@ -501,10 +527,10 @@ async function getPackageNameFromRepo(repoUrl: string): Promise<string | null> {
 }
 
 /**
- * 从GitHub URL提取仓库路径
+ * Extract GitHub path from URL
  */
 function extractGitHubPathFromUrl(url: string): string | null {
-  // 匹配GitHub URL
+  // Match GitHub URL
   const githubPattern = /github\.com[\/:]([^\/]+)\/([^\/\.]+)(\.git)?/;
   const match = url.match(githubPattern);
 
@@ -518,31 +544,31 @@ function extractGitHubPathFromUrl(url: string): string | null {
 }
 
 /**
- * 启动MCP服务器
+ * Start MCP server
  */
 export async function startServer(): Promise<void> {
-  // 初始化设置
+  // Initialize settings
   await initSettings();
 
-  // 预加载MCP包信息
+  // Preload MCP package information
   await preloadMCPPackages();
 
-  // 使用标准输入输出启动服务器
+  // Start server with standard input/output
   const transport = new StdioServerTransport();
   await server.connect(transport);
 }
 
 /**
- * 获取已注册的服务器列表
+ * Get list of registered servers
  */
 export async function getRegisteredServers(): Promise<MCPServerInfo[]> {
-  // 确保设置已加载
+  // Ensure settings are loaded
   await initSettings();
   return serverSettings.servers;
 }
 
 /**
- * 以下是为CLI工具提供的接口函数
+ * The following are interface functions for CLI tools
  */
 
 export async function handleInstallServer(args: {
@@ -561,7 +587,7 @@ export async function handleInstallServer(args: {
 
   try {
     if (useNpx) {
-      // 使用npx安装
+      // Install using npx
       const packageName = await getPackageNameFromRepo(server.repo);
       if (!packageName) {
         throw new Error(`Could not determine package name for ${server.repo}`);
@@ -577,24 +603,24 @@ export async function handleInstallServer(args: {
       };
     }
 
-    // 使用git clone安装
+    // Install using git clone
     const repoName =
       server.repo.split("/").pop()?.replace(".git", "") || serverName;
     const cloneDir = path.join(homedir(), ".mcp", "servers", repoName);
 
-    // 创建目录
+    // Create directory
     await fs.mkdir(path.join(homedir(), ".mcp", "servers"), {
       recursive: true,
     });
 
-    // 克隆仓库
+    // Clone repository
     await exec(`git clone ${server.repo} ${cloneDir}`);
 
-    // 安装依赖
+    // Install dependencies
     await exec(`cd ${cloneDir} && npm install`);
 
     if (server.installCommands && server.installCommands.length > 0) {
-      // 运行自定义安装命令
+      // Run custom installation commands
       for (const cmd of server.installCommands) {
         await exec(`cd ${cloneDir} && ${cmd}`);
       }
@@ -617,20 +643,20 @@ export async function handleInstallServer(args: {
 export async function handleRegisterServer(
   serverInfo: MCPServerInfo
 ): Promise<OperationResult> {
-  // 检查服务器是否已存在
+  // Check if server already exists
   const existingIndex = serverSettings.servers.findIndex(
     (s) => s.name === serverInfo.name
   );
 
   if (existingIndex !== -1) {
-    // 更新现有服务器
+    // Update existing server
     serverSettings.servers[existingIndex] = serverInfo;
   } else {
-    // 添加新服务器
+    // Add new server
     serverSettings.servers.push(serverInfo);
   }
 
-  // 保存更新后的设置
+  // Save updated settings
   await saveSettings();
 
   return {
@@ -645,7 +671,7 @@ export async function handleRemoveServer(args: {
   const { serverName } = args;
   const initialLength = serverSettings.servers.length;
 
-  // 移除指定的服务器
+  // Remove specified server
   serverSettings.servers = serverSettings.servers.filter(
     (s) => s.name !== serverName
   );
@@ -657,7 +683,7 @@ export async function handleRemoveServer(args: {
     };
   }
 
-  // 保存更新后的设置
+  // Save updated settings
   await saveSettings();
 
   return {
@@ -682,7 +708,7 @@ export async function handleConfigureServer(args: {
     };
   }
   console.error("server_live");
-  // 获取README内容
+  // Get README content
   const readmeResult = await handleGetServerReadme({ serverName });
 
   if (!readmeResult.success || !readmeResult.readmeContent) {
@@ -692,8 +718,8 @@ export async function handleConfigureServer(args: {
     };
   }
 
-  // 这里应该调用LLM API来获取配置建议
-  // 为简化示例，我们仅返回README内容和提示信息
+  // Here we should call LLM API for configuration suggestions
+  // For simplicity, we just return README content and prompts
 
   return {
     success: true,
@@ -701,12 +727,12 @@ export async function handleConfigureServer(args: {
     readmeContent: readmeResult.readmeContent,
     explanation:
       "Please refer to the README content for configuration instructions.",
-    suggestedCommand: `mcp-auto-install install ${serverName}`,
+    // suggestedCommand: `mcp-auto-install install ${serverName}`,
   };
 }
 
 /**
- * 获取服务器的README内容
+ * Get server README content
  */
 export async function handleGetServerReadme(args: {
   serverName: string;
@@ -722,10 +748,10 @@ export async function handleGetServerReadme(args: {
   }
 
   try {
-    // 获取README内容（直接从服务器对象中获取）
+    // Get README content (directly from server object)
     const readmeContent = server.readme || "Failed to get README.";
 
-    // 添加提示词，引导LLM总结内容并指导用户配置参数
+    // Add prompts to guide LLM in summarizing content and guiding parameter configuration
     const promptedReadme = `# ${serverName} README
 
 ${readmeContent}
@@ -751,307 +777,17 @@ Please follow the README content above to:
 }
 
 /**
- * 自动检测用户请求所需的MCP服务器
- */
-// export async function handleAutoDetect(args: {
-//   userRequest: string;
-//   settingsPath?: string;
-// }): Promise<OperationResult> {
-//   try {
-//     const { userRequest, settingsPath } = args;
-//     const customSettingsPath = settingsPath || SETTINGS_PATH;
-
-//     // 通过分析用户请求确定所需的MCP服务器类型
-//     // 注意：在MCP架构中，实际上LLM已经分析了用户请求并选择调用了这个工具
-//     // 我们只需要提供合适的服务器类型即可
-//     let serverType = "";
-
-//     // 关键词匹配（基本规则）
-//     const requestLower = userRequest.toLowerCase();
-
-//     // 检测文件系统操作
-//     if (
-//       requestLower.includes("读取文件") ||
-//       requestLower.includes("read file") ||
-//       requestLower.includes("filesystem") ||
-//       requestLower.includes("file system") ||
-//       requestLower.includes("打开文件") ||
-//       requestLower.includes("open file") ||
-//       requestLower.includes("写入文件") ||
-//       requestLower.includes("write file") ||
-//       requestLower.includes("文件操作") ||
-//       requestLower.includes("file operation")
-//     ) {
-//       serverType = "filesystem";
-//     }
-//     // 检测数据库操作
-//     else if (
-//       requestLower.includes("数据库") ||
-//       requestLower.includes("database") ||
-//       requestLower.includes("查询数据") ||
-//       requestLower.includes("query data") ||
-//       requestLower.includes("保存数据") ||
-//       requestLower.includes("save data") ||
-//       requestLower.includes("sql") ||
-//       requestLower.includes("mongodb") ||
-//       requestLower.includes("sqlite")
-//     ) {
-//       serverType = "database";
-//     }
-//     // 检测Web请求
-//     else if (
-//       requestLower.includes("网页") ||
-//       requestLower.includes("web") ||
-//       requestLower.includes("http") ||
-//       requestLower.includes("url") ||
-//       requestLower.includes("抓取") ||
-//       requestLower.includes("爬取") ||
-//       requestLower.includes("scrape") ||
-//       requestLower.includes("fetch") ||
-//       requestLower.includes("api") ||
-//       requestLower.includes("网络请求") ||
-//       requestLower.includes("网站")
-//     ) {
-//       serverType = "web";
-//     }
-//     // 检测图像处理
-//     else if (
-//       requestLower.includes("图像") ||
-//       requestLower.includes("image") ||
-//       requestLower.includes("图片") ||
-//       requestLower.includes("picture") ||
-//       requestLower.includes("照片") ||
-//       requestLower.includes("photo") ||
-//       requestLower.includes("视觉") ||
-//       requestLower.includes("vision") ||
-//       requestLower.includes("ocr") ||
-//       requestLower.includes("识别文字") ||
-//       requestLower.includes("识别图像")
-//     ) {
-//       serverType = "image";
-//     }
-//     // 检测命令执行
-//     else if (
-//       requestLower.includes("执行命令") ||
-//       requestLower.includes("run command") ||
-//       requestLower.includes("shell") ||
-//       requestLower.includes("命令行") ||
-//       requestLower.includes("command line") ||
-//       requestLower.includes("执行脚本") ||
-//       requestLower.includes("run script") ||
-//       requestLower.includes("terminal") ||
-//       requestLower.includes("终端")
-//     ) {
-//       serverType = "shell";
-//     }
-
-//     // 如果确定了服务器类型，尝试安装该类型的MCP服务器
-//     if (serverType) {
-//       // 在本地已注册的服务器中查找
-//       const matchingServers = serverSettings.servers.filter(
-//         (server) =>
-//           server.keywords?.includes(serverType) ||
-//           server.name.includes(serverType) ||
-//           server.description.toLowerCase().includes(serverType)
-//       );
-
-//       if (matchingServers.length > 0) {
-//         // 直接使用预加载的服务器信息
-//         const bestMatch = matchingServers[0];
-//         const readme = readmeCache[bestMatch.name] || "未能获取README。";
-
-//         // 添加提示词，引导LLM总结内容并指导用户配置参数
-//         const promptedReadme = `# ${bestMatch.name} README
-
-// ${readme}
-
-// ---
-
-// 请根据上述README内容:
-// 1. 总结这个MCP服务器的主要功能和用途
-// 2. 指导用户如何配置必要的参数
-// 3. 提供一个简单的使用示例`;
-
-//         return {
-//           success: true,
-//           message: `找到匹配的MCP服务器: ${bestMatch.name}`,
-//           serverName: bestMatch.name,
-//           readme: promptedReadme,
-//           packageInfo: bestMatch,
-//         };
-//       }
-//       // 如果本地没有找到，则尝试从npm查找
-//       return await detectAndInstallServer(serverType, customSettingsPath);
-//     }
-
-//     return {
-//       success: false,
-//       message: "未能识别出需要的MCP服务器类型。请尝试提供更具体的请求。",
-//       suggestedTypes: ["filesystem", "database", "web", "image", "shell"],
-//     };
-//   } catch (error) {
-//     return {
-//       success: false,
-//       message: `自动检测失败: ${(error as Error).message}`,
-//     };
-//   }
-// }
-
-/**
- * npm搜索结果项的接口
- */
-interface NpmSearchResultItem {
-  name: string;
-  description?: string;
-  keywords?: string[];
-  version?: string;
-  date?: string;
-  links?: {
-    npm?: string;
-    homepage?: string;
-    repository?: string;
-    bugs?: string;
-  };
-  author?: {
-    name?: string;
-    email?: string;
-    url?: string;
-  };
-  publisher?: {
-    name?: string;
-    email?: string;
-  };
-}
-
-/**
- * npm包注册信息接口
- */
-interface NpmRegistryInfo {
-  name?: string;
-  description?: string;
-  "dist-tags"?: Record<string, string>;
-  versions?: Record<string, unknown>;
-  readme?: string;
-  maintainers?: Array<{ name?: string; email?: string }>;
-  author?: { name?: string; email?: string; url?: string };
-  repository?: { type?: string; url?: string };
-  homepage?: string;
-  keywords?: string[];
-  bugs?: { url?: string };
-}
-
-/**
- * 检测并安装指定类型的服务器
- */
-// async function detectAndInstallServer(
-//   serverType: string,
-//   settingsPath: string
-// ): Promise<OperationResult> {
-//   try {
-//     // 通过npm搜索相关包
-//     console.log(`Searching for MCP ${serverType} packages...`);
-
-//     // 搜索npm包
-//     const { stdout } = await exec(`npm search mcp-${serverType} --json`);
-//     const searchResults = JSON.parse(stdout) as NpmSearchResultItem[];
-
-//     if (!searchResults || !searchResults.length) {
-//       return {
-//         success: false,
-//         message: `未找到匹配的MCP ${serverType}服务器。`,
-//       };
-//     }
-
-//     // 找到最匹配的包
-//     const bestMatch =
-//       searchResults.find(
-//         (pkg) =>
-//           pkg.name.includes(`mcp-${serverType}`) &&
-//           pkg.keywords &&
-//           pkg.keywords.includes("mcp") &&
-//           pkg.keywords.includes(serverType)
-//       ) || searchResults[0];
-
-//     // 获取包的详细信息
-//     const packageInfo = await getNpmPackageInfo(bestMatch.name);
-
-//     if (!packageInfo) {
-//       return {
-//         success: false,
-//         message: `无法获取包 ${bestMatch.name} 的信息。`,
-//       };
-//     }
-
-//     // 获取README - 先检查缓存，如果没有则使用packageInfo中的readme
-//     const readme = readmeCache[bestMatch.name] || packageInfo.readme || "未能获取README。";
-
-//     // 如果获取到README且不在缓存中，则缓存它
-//     if (readme && !readmeCache[bestMatch.name]) {
-//       readmeCache[bestMatch.name] = readme;
-//       const readmePath = path.join(
-//         README_CACHE_DIR,
-//         `${bestMatch.name.replace("/", "_")}.md`
-//       );
-//       await fs.mkdir(README_CACHE_DIR, { recursive: true });
-//       await fs.writeFile(readmePath, readme, "utf-8");
-//     }
-
-//     // 检查服务器是否已注册
-//     const existingServer = await findServer(bestMatch.name);
-//     if (existingServer) {
-//       console.log(`Server ${bestMatch.name} is already registered.`);
-//     } else {
-//       // 注册服务器
-//       const repoUrl = packageInfo.links?.repository || "";
-//       const serverInfo: MCPServerInfo = {
-//         name: bestMatch.name,
-//         repo: repoUrl,
-//         command: `npx ${bestMatch.name}`,
-//         description: bestMatch.description || `MCP ${serverType} server`,
-//         keywords: bestMatch.keywords || [serverType, "mcp"],
-//       };
-
-//       // 注册服务器
-//       await handleRegisterServer(serverInfo);
-//     }
-
-//     // 添加提示词，引导LLM总结内容并指导用户配置参数
-//     const promptedReadme = `# ${bestMatch.name} README
-
-// ${readme}
-
-// ---
-
-// 请根据上述README内容:
-// 1. 总结这个MCP服务器的主要功能和用途
-// 2. 指导用户如何配置必要的参数
-// 3. 提供一个简单的使用示例`;
-
-//     return {
-//       success: true,
-//       message: `成功找到并注册 ${bestMatch.name} 服务器！`,
-//       serverName: bestMatch.name,
-//       readme: promptedReadme,
-//       packageInfo,
-//     };
-//   } catch (error) {
-//     return {
-//       success: false,
-//       message: `检测和安装服务器失败: ${(error as Error).message}`,
-//     };
-//   }
-// }
-
-/**
- * 获取npm包的README (仅从缓存获取)
+ * Get npm package README (from cache only)
  */
 async function getPackageReadme(packageName: string): Promise<string> {
   try {
     // Ensure settings are loaded
     await initSettings();
-    
+
     // Find README from server settings
-    const server = serverSettings.servers.find((s) => s.name.includes(packageName));
+    const server = serverSettings.servers.find((s) =>
+      s.name.includes(packageName)
+    );
     if (server?.readme) {
       return server.readme;
     }
@@ -1063,113 +799,100 @@ async function getPackageReadme(packageName: string): Promise<string> {
 }
 
 /**
- * 获取npm包信息
- */
-async function getNpmPackageInfo(
-  packageName: string
-): Promise<NpmPackageInfo | null> {
-  try {
-    const response = await fetch(`https://registry.npmjs.org/${packageName}`);
-    const data = (await response.json()) as NpmPackageInfo;
-    return data;
-  } catch (error) {
-    console.error(`获取包信息失败: ${(error as Error).message}`);
-    return null;
-  }
-}
-
-/**
- * 保存命令到外部配置文件（如Claude的配置文件）
- * @param serverName MCP服务器名称
- * @param commandInput 用户输入的命令，例如 "npx @modelcontextprotocol/server-filesystem ~/Desktop ~/Documents"
- * @returns 操作结果
+ * Save command to external configuration file (e.g., Claude's configuration file)
+ * @param serverName MCP server name
+ * @param command User input command, e.g., "npx @modelcontextprotocol/server-name --arg1 value1 --arg2 value2"
+ * @param args Array of command arguments, e.g., ['--port', '3000', '--config', 'config.json']
+ * @param env Environment variables object for the command, e.g., { 'NODE_ENV': 'production', 'DEBUG': 'true' }
+ * @returns Operation result
  */
 export async function saveCommandToExternalConfig(
   serverName: string,
-  commandInput: string
+  command: string,
+  args: string[],
+  env?: Record<string, string>
 ): Promise<OperationResult> {
   try {
-    // 解析命令
-    const parts = commandInput.trim().split(/\s+/);
-    if (parts.length < 2) {
+    if (!command) {
       return {
         success: false,
-        message: "命令格式不正确，至少需要包含命令名和参数",
+        message: "Command cannot be empty",
       };
     }
 
-    const command = parts[0]; // 通常是 npx
-    const args = parts.slice(1); // 其余部分作为参数
-
-    // 检查环境变量 - 这里是指向LLM（如Claude）配置文件的路径，而不是mcp_settings.json
+    // Check environment variable - points to LLM (e.g., Claude) config file path, not mcp_settings.json
     const externalConfigPath = process.env.MCP_SETTINGS_PATH;
     if (!externalConfigPath) {
       return {
         success: false,
         message:
-          "未设置MCP_SETTINGS_PATH环境变量，无法更新LLM配置文件。请设置此环境变量指向LLM（如Claude）的配置文件路径。",
+          "MCP_SETTINGS_PATH environment variable not set. Please set it to point to the LLM (e.g., Claude) configuration file path.",
       };
     }
 
-    // 检查服务器是否存在（在我们自己的MCP服务器注册表中）
+    // Check if server exists (in our MCP server registry)
     const server = await findServer(serverName);
     if (!server) {
       return {
         success: false,
-        message: `服务器 '${serverName}' 在MCP服务器注册表中不存在`,
+        message: `Server '${serverName}' does not exist in MCP server registry`,
       };
     }
 
     try {
-      // 读取外部LLM配置文件
+      // Read external LLM configuration file
       const configData = await fs.readFile(externalConfigPath, "utf-8");
       const config = JSON.parse(configData);
 
-      // 确保存在mcpServers字段
+      // Ensure mcpServers field exists
       if (!config.mcpServers) {
         config.mcpServers = {};
       }
 
-      // 添加/更新服务器配置到LLM配置文件
+      // Add/update server configuration to LLM config file
       config.mcpServers[serverName] = {
         command,
         args,
+        env: env || {},
       };
 
-      // 保存配置到LLM配置文件
+      // Save configuration to LLM config file
       await fs.writeFile(
         externalConfigPath,
         JSON.stringify(config, null, 2),
         "utf-8"
       );
 
-      // 同时更新内部服务器配置 - 保存到我们自己的MCP服务器注册表
+      // Also update internal server configuration - save to our MCP server registry
       server.commandConfig = {
         command,
         args,
+        env: env || {},
       };
       await saveSettings();
 
       return {
         success: true,
-        message: `成功将命令 "${commandInput}" 保存到LLM配置文件 ${externalConfigPath}`,
+        message: `Successfully saved command configuration for ${serverName} to LLM configuration file ${externalConfigPath}`,
       };
     } catch (error) {
       return {
         success: false,
-        message: `读取或写入LLM配置文件失败: ${(error as Error).message}`,
+        message: `Failed to read or write LLM configuration file: ${
+          (error as Error).message
+        }`,
       };
     }
   } catch (error) {
     return {
       success: false,
-      message: `保存命令失败: ${(error as Error).message}`,
+      message: `Failed to save command configuration: ${(error as Error).message}`,
     };
   }
 }
 
 /**
- * 处理用户配置解析
+ * Handle user configuration parsing
  */
 export async function handleParseConfig(args: {
   config: string;
@@ -1184,9 +907,11 @@ export async function handleParseConfig(args: {
     }
 
     // Validate each server's configuration format
-    for (const [serverName, serverConfig] of Object.entries(userConfig.mcpServers)) {
+    for (const [serverName, serverConfig] of Object.entries(
+      userConfig.mcpServers
+    )) {
       const config = serverConfig as { command: string; args: string[] };
-      
+
       // Validate required fields
       if (!config.command || !Array.isArray(config.args)) {
         return {
@@ -1201,7 +926,8 @@ export async function handleParseConfig(args: {
     if (!externalConfigPath) {
       return {
         success: false,
-        message: "MCP_SETTINGS_PATH environment variable not set, cannot save configuration.",
+        message:
+          "MCP_SETTINGS_PATH environment variable not set, cannot save configuration.",
       };
     }
 
@@ -1218,7 +944,7 @@ export async function handleParseConfig(args: {
     const mergedConfig = {
       ...existingConfig,
       mcpServers: {
-        ...(existingConfig.mcpServers as Record<string, unknown> || {}),
+        ...((existingConfig.mcpServers as Record<string, unknown>) || {}),
         ...userConfig.mcpServers,
       },
     };

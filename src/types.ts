@@ -11,6 +11,7 @@ export interface MCPServerInfo {
   commandConfig?: {
     command: string;
     args: string[];
+    env?: Record<string, string>;
   };
   readme?: string;
 }
