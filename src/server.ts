@@ -86,16 +86,12 @@ let serverSettings: { servers: MCPServerInfo[] } = { servers: [] };
  */
 async function preloadMCPPackages(): Promise<void> {
   try {
-    console.log("预加载MCP包信息...");
-
     // 从@modelcontextprotocol域获取所有可用包
     const packages = await npxFinder("@modelcontextprotocol", {
       timeout: 15000,
       retries: 3,
       retryDelay: 1000,
     });
-
-    console.log(`发现 ${packages.length} 个MCP包`);
 
     // 过滤和处理包信息
     for (const pkg of packages) {
@@ -136,19 +132,14 @@ async function preloadMCPPackages(): Promise<void> {
           }
         }
       } catch (pkgError) {
-        console.warn(
-          `处理包 ${pkg.name} 时出错: ${(pkgError as Error).message}`
-        );
+        // 静默处理包错误
       }
     }
 
     // 保存更新后的设置
     await saveSettings();
-    console.log(
-      `预加载完成，已加载 ${serverSettings.servers.length} 个MCP服务器`
-    );
   } catch (error) {
-    console.error(`预加载MCP包信息失败: ${(error as Error).message}`);
+    // 静默处理错误
   }
 }
 
@@ -455,9 +446,6 @@ async function getPackageNameFromRepo(repoUrl: string): Promise<string | null> {
         return trimmedOutput;
       }
     } catch (cliError) {
-      console.warn(
-        `CLI npx-scope-finder failed: ${(cliError as Error).message}`
-      );
       // 继续使用其他方法
     }
 
@@ -494,9 +482,6 @@ async function getPackageNameFromRepo(repoUrl: string): Promise<string | null> {
         return nameMatchingPackage.name;
       }
     } catch (npmError) {
-      console.warn(
-        `npx-scope-finder API failed: ${(npmError as Error).message}`
-      );
       // 继续使用备用方法
     }
 
@@ -504,14 +489,10 @@ async function getPackageNameFromRepo(repoUrl: string): Promise<string | null> {
     const repo = repoPath.split("/")[1];
     return `@modelcontextprotocol/${repo}`;
   } catch (error) {
-    console.error("Failed to find package name:", error);
-
     // 如果上述方法失败，尝试从URL提取包名
     const parts = repoUrl.split("/");
     if (parts.length >= 2) {
       const repo = parts[parts.length - 1].replace(".git", "");
-
-      // 假设包名格式为 @modelcontextprotocol/repo
       return `@modelcontextprotocol/${repo}`;
     }
 
@@ -549,7 +530,6 @@ export async function startServer(): Promise<void> {
   // 使用标准输入输出启动服务器
   const transport = new StdioServerTransport();
   await server.connect(transport);
-  console.log("MCP Auto Install Server is running");
 }
 
 /**
@@ -743,7 +723,7 @@ export async function handleGetServerReadme(args: {
 
   try {
     // 获取README内容（直接从服务器对象中获取）
-    const readmeContent = server.readme || "未能获取README。";
+    const readmeContent = server.readme || "Failed to get README.";
 
     // 添加提示词，引导LLM总结内容并指导用户配置参数
     const promptedReadme = `# ${serverName} README
@@ -752,10 +732,10 @@ ${readmeContent}
 
 ---
 
-请根据上述README内容:
-1. 总结这个MCP服务器的主要功能和用途
-2. 指导用户如何配置必要的参数
-3. 提供一个简单的使用示例`;
+Please follow the README content above to:
+1. Summarize the main functions and purposes of this MCP server
+2. Guide users on how to configure necessary parameters
+3. Provide a simple usage example`;
 
     return {
       success: true,
@@ -1067,20 +1047,18 @@ interface NpmRegistryInfo {
  */
 async function getPackageReadme(packageName: string): Promise<string> {
   try {
-    // 确保设置已加载
+    // Ensure settings are loaded
     await initSettings();
-
-    // 从服务器设置中查找README
-    const server = serverSettings.servers.find((s) =>
-      s.name.includes(packageName)
-    );
+    
+    // Find README from server settings
+    const server = serverSettings.servers.find((s) => s.name.includes(packageName));
     if (server?.readme) {
       return server.readme;
     }
 
-    return "未能获取README。该服务器没有预加载README信息。";
+    return "Failed to get README. Server has no preloaded README information.";
   } catch (error) {
-    return `获取README失败: ${(error as Error).message}`;
+    return `Failed to get README: ${(error as Error).message}`;
   }
 }
 
@@ -1197,56 +1175,55 @@ export async function handleParseConfig(args: {
   config: string;
 }): Promise<OperationResult> {
   try {
-    // 解析用户发送的JSON字符串
+    // Parse the JSON string sent by the user
     const userConfig = JSON.parse(args.config);
 
-    // 确保存在mcpServers字段
+    // Ensure mcpServers field exists
     if (!userConfig.mcpServers) {
       userConfig.mcpServers = {};
     }
 
-    // 验证每个服务器的配置格式
+    // Validate each server's configuration format
     for (const [serverName, serverConfig] of Object.entries(userConfig.mcpServers)) {
       const config = serverConfig as { command: string; args: string[] };
       
-      // 验证必要的字段
+      // Validate required fields
       if (!config.command || !Array.isArray(config.args)) {
         return {
           success: false,
-          message: `服务器 ${serverName} 的配置格式不正确。需要包含 command 和 args 字段。`,
+          message: `Invalid configuration format for server ${serverName}. Must include command and args fields.`,
         };
       }
     }
 
-    // 保存配置到外部文件
+    // Save configuration to external file
     const externalConfigPath = process.env.MCP_SETTINGS_PATH;
     if (!externalConfigPath) {
       return {
         success: false,
-        message: "未设置MCP_SETTINGS_PATH环境变量，无法保存配置。",
+        message: "MCP_SETTINGS_PATH environment variable not set, cannot save configuration.",
       };
     }
 
-    // 读取现有配置（如果存在）
-    let existingConfig = {};
+    // Read existing configuration (if any)
+    let existingConfig: Record<string, unknown> = {};
     try {
       const existingData = await fs.readFile(externalConfigPath, "utf-8");
       existingConfig = JSON.parse(existingData);
     } catch (error) {
-      // 如果文件不存在或解析失败，使用空对象
-      console.log("No existing config found, creating new one");
+      // If file doesn't exist or parsing fails, use empty object
     }
 
-    // 合并配置
+    // Merge configurations
     const mergedConfig = {
       ...existingConfig,
       mcpServers: {
-        ...(existingConfig as any).mcpServers,
+        ...(existingConfig.mcpServers as Record<string, unknown> || {}),
         ...userConfig.mcpServers,
       },
     };
 
-    // 保存合并后的配置
+    // Save merged configuration
     await fs.writeFile(
       externalConfigPath,
       JSON.stringify(mergedConfig, null, 2),
@@ -1255,13 +1232,13 @@ export async function handleParseConfig(args: {
 
     return {
       success: true,
-      message: "配置解析成功并已保存",
+      message: "Configuration parsed and saved successfully",
       config: mergedConfig,
     };
   } catch (error) {
     return {
       success: false,
-      message: `配置解析失败: ${(error as Error).message}`,
+      message: `Failed to parse configuration: ${(error as Error).message}`,
     };
   }
 }

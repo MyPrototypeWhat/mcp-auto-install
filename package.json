@@ -1,26 +1,44 @@
 {
   "name": "mcp-auto-install",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "MCP server that helps install other MCP servers automatically",
   "type": "module",
   "main": "dist/index.js",
   "bin": {
     "mcp-auto-install": "dist/index.js"
   },
+  "files": [
+    "dist",
+    "LICENSE",
+    "README.md"
+  ],
   "scripts": {
     "build": "tsc",
     "start": "node dist/index.js",
     "dev": "ts-node --esm src/index.ts",
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "prepublishOnly": "npm run build"
   },
   "keywords": [
     "mcp",
     "modelcontextprotocol",
     "server",
-    "auto-install"
+    "auto-install",
+    "ai",
+    "llm",
+    "claude",
+    "automation"
   ],
-  "author": "",
+  "author": "Anthropic",
   "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/anthropics/mcp-auto-install.git"
+  },
+  "bugs": {
+    "url": "https://github.com/anthropics/mcp-auto-install/issues"
+  },
+  "homepage": "https://github.com/anthropics/mcp-auto-install#readme",
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.7.0",
     "commander": "^11.1.0",
@@ -33,5 +51,8 @@
     "ts-node": "^10.9.2",
     "typescript": "^5.3.3"
   },
-  "packageManager": "pnpm@10.4.1+sha512.c753b6c3ad7afa13af388fa6d808035a008e30ea9993f58c6663e2bc5ff21679aa834db094987129aa4d488b86df57f7b634981b2f827cdcacc698cc0cfb88af"
+  "packageManager": "pnpm@10.4.1+sha512.c753b6c3ad7afa13af388fa6d808035a008e30ea9993f58c6663e2bc5ff21679aa834db094987129aa4d488b86df57f7b634981b2f827cdcacc698cc0cfb88af",
+  "engines": {
+    "node": ">=18.0.0"
+  }
 }

@@ -16,7 +16,7 @@ import { fileURLToPath } from "node:url";
 import { MCPServerInfo } from "./types.js";
 
 /**
- * 命令行界面，用于控制MCP自动安装服务器
+ * Command line interface for controlling MCP automatic installation servers
  */
 export class MCPCliApp {
   private program: Command;
@@ -38,17 +38,12 @@ export class MCPCliApp {
       .option("--llm-api-key <key>", "API key for the LLM service")
       .option("--llm-api-endpoint <url>", "API endpoint for the LLM service");
 
-    // 添加默认命令来启动服务器
+    // Add default command to start the server
     this.program
       .command("start", { isDefault: true })
       .description("Start the MCP Auto Install server")
       .action(async () => {
-        try {
-          await startServer();
-        } catch (error) {
-          console.error("Failed to start the server:", error);
-          process.exit(1);
-        }
+        await startServer();
       });
 
     // Add command to register a new server
@@ -67,26 +62,19 @@ export class MCPCliApp {
         (val) => val.split(",")
       )
       .action(async (name, options) => {
-        try {
-          // 注册服务器
-          const result = await handleRegisterServer({
-            name,
-            repo: options.repo,
-            command: options.command,
-            description: options.description,
-            keywords: options.keywords || [],
-            installCommands: options.installCommands,
-          });
+        const result = await handleRegisterServer({
+          name,
+          repo: options.repo,
+          command: options.command,
+          description: options.description,
+          keywords: options.keywords || [],
+          installCommands: options.installCommands,
+        });
 
-          if (result.success) {
-            console.log(result.message);
-          } else {
-            console.error(result.message);
-          }
-        } catch (error) {
-          console.error(
-            `Error registering server: ${(error as Error).message}`
-          );
+        if (result.success) {
+          console.log(result.message);
+        } else {
+          console.error(result.message);
         }
         process.exit(0);
       });
@@ -97,20 +85,16 @@ export class MCPCliApp {
       .description("Install an MCP server")
       .option("--clone", "Use git clone method instead of npx", false)
       .action(async (name: string, options) => {
-        try {
-          const useNpx = !options.clone;
-          const result = await handleInstallServer({
-            serverName: name,
-            useNpx,
-          });
+        const useNpx = !options.clone;
+        const result = await handleInstallServer({
+          serverName: name,
+          useNpx,
+        });
 
-          if (result.success) {
-            console.log(result.message);
-          } else {
-            console.error(result.message);
-          }
-        } catch (error) {
-          console.error(`Error installing server: ${(error as Error).message}`);
+        if (result.success) {
+          console.log(result.message);
+        } else {
+          console.error(result.message);
         }
         process.exit(0);
       });
@@ -120,26 +104,21 @@ export class MCPCliApp {
       .command("list")
       .description("List all registered MCP servers")
       .action(async () => {
-        try {
-          // 获取注册的服务器列表
-          const servers = await getRegisteredServers();
+        const servers = await getRegisteredServers();
 
-          if (servers.length === 0) {
-            console.log("No MCP servers are registered.");
-          } else {
-            console.log("Registered MCP Servers:");
-            for (const server of servers) {
-              console.log(`- ${server.name}: ${server.description}`);
-              console.log(`  Command: ${server.command}`);
-              console.log(`  Repository: ${server.repo}`);
-              if (server.keywords && server.keywords.length > 0) {
-                console.log(`  Keywords: ${server.keywords.join(", ")}`);
-              }
-              console.log();
+        if (servers.length === 0) {
+          console.log("No MCP servers are registered.");
+        } else {
+          console.log("Registered MCP Servers:");
+          for (const server of servers) {
+            console.log(`- ${server.name}: ${server.description}`);
+            console.log(`  Command: ${server.command}`);
+            console.log(`  Repository: ${server.repo}`);
+            if (server.keywords && server.keywords.length > 0) {
+              console.log(`  Keywords: ${server.keywords.join(", ")}`);
             }
+            console.log();
           }
-        } catch (error) {
-          console.error(`Error listing servers: ${(error as Error).message}`);
         }
         process.exit(0);
       });
@@ -157,33 +136,27 @@ export class MCPCliApp {
         "Specific question about server configuration"
       )
       .action(async (name: string, options) => {
-        try {
-          const purpose = options.purpose || "general use";
-          const query = options.query || "";
+        const purpose = options.purpose || "general use";
+        const query = options.query || "";
 
-          const result = await handleConfigureServer({
-            serverName: name,
-            purpose,
-            query,
-          });
+        const result = await handleConfigureServer({
+          serverName: name,
+          purpose,
+          query,
+        });
 
-          if (result.success) {
-            console.log(result.message);
-            if (result.explanation) {
-              console.log("\nExplanation:");
-              console.log(result.explanation);
-            }
-            if (result.suggestedCommand) {
-              console.log("\nSuggested Command:");
-              console.log(result.suggestedCommand);
-            }
-          } else {
-            console.error(result.message);
+        if (result.success) {
+          console.log(result.message);
+          if (result.explanation) {
+            console.log("\nExplanation:");
+            console.log(result.explanation);
           }
-        } catch (error) {
-          console.error(
-            `Error configuring server: ${(error as Error).message}`
-          );
+          if (result.suggestedCommand) {
+            console.log("\nSuggested Command:");
+            console.log(result.suggestedCommand);
+          }
+        } else {
+          console.error(result.message);
         }
         process.exit(0);
       });
@@ -193,18 +166,14 @@ export class MCPCliApp {
       .command("readme <n>")
       .description("Get the README content for an MCP server")
       .action(async (name: string) => {
-        try {
-          const result = await handleGetServerReadme({ serverName: name });
+        const result = await handleGetServerReadme({ serverName: name });
 
-          if (result.success) {
-            console.log(`README for ${name}:`);
-            console.log();
-            console.log(result.readmeContent || "No README content available.");
-          } else {
-            console.error(result.message || "Failed to fetch README.");
-          }
-        } catch (error) {
-          console.error(`Error getting README: ${(error as Error).message}`);
+        if (result.success) {
+          console.log(`README for ${name}:`);
+          console.log();
+          console.log(result.readmeContent || "No README content available.");
+        } else {
+          console.error(result.message || "Failed to fetch README.");
         }
         process.exit(0);
       });
@@ -214,16 +183,12 @@ export class MCPCliApp {
       .command("remove <n>")
       .description("Remove a registered MCP server")
       .action(async (name: string) => {
-        try {
-          const result = await handleRemoveServer({ serverName: name });
+        const result = await handleRemoveServer({ serverName: name });
 
-          if (result.success) {
-            console.log(result.message);
-          } else {
-            console.error(result.message);
-          }
-        } catch (error) {
-          console.error(`Error removing server: ${(error as Error).message}`);
+        if (result.success) {
+          console.log(result.message);
+        } else {
+          console.error(result.message);
         }
         process.exit(0);
       });
@@ -267,17 +232,13 @@ export class MCPCliApp {
       .command("save-command <server-name> <command>")
       .description("Save a command for a server to external config file")
       .action(async (serverName: string, command: string, cmdObj) => {
-        try {
-          console.log(`保存命令到外部配置文件: ${serverName} ${command}`);
-          const result = await saveCommandToExternalConfig(serverName, command);
+        console.log(`Saving command to external config file: ${serverName} ${command}`);
+        const result = await saveCommandToExternalConfig(serverName, command);
 
-          if (result.success) {
-            console.log(`✅ ${result.message}`);
-          } else {
-            console.error(`❌ ${result.message}`);
-          }
-        } catch (error) {
-          console.error(`Error saving command: ${(error as Error).message}`);
+        if (result.success) {
+          console.log(`✅ ${result.message}`);
+        } else {
+          console.error(`❌ ${result.message}`);
         }
         process.exit(0);
       });
@@ -290,11 +251,11 @@ export class MCPCliApp {
       .option("-u, --url <url>", "URL to fetch registry from")
       .action(async (options: { url?: string }) => {
         try {
-          // 初始化服务器实例
+          // Initialize server instance
           this.server = new MCPAutoInstallServer();
           await this.server.init();
           
-          // 实现更新注册表的功能
+          // Implement update registry functionality
           console.log("Registry updated successfully");
         } catch (error) {
           console.error("Failed to update registry:", error);
@@ -307,24 +268,24 @@ export class MCPCliApp {
   }
 
   /**
-   * 运行CLI应用
+   * Run the CLI application
    */
   public run() {
-    // 检查环境变量
+    // Check environment variables
     if (!process.env.MCP_SETTINGS_PATH) {
-      console.warn("\n⚠️  警告: 环境变量 MCP_SETTINGS_PATH 未设置");
-      console.warn("此环境变量用于指定LLM（如Claude）的MCP服务配置文件路径");
-      console.warn("如需将命令保存到LLM配置文件，请设置此环境变量，例如:");
+      console.warn("\n⚠️  Warning: MCP_SETTINGS_PATH environment variable not set");
+      console.warn("This environment variable is used to specify the path to the LLM (e.g., Claude) MCP service configuration file");
+      console.warn("To save commands to the LLM configuration file, please set this environment variable, for example:");
       console.warn(
         'export MCP_SETTINGS_PATH="/Users/username/Library/Application Support/Claude/claude_desktop_config.json"\n'
       );
     } else {
-      console.log(`📁 使用LLM配置文件: ${process.env.MCP_SETTINGS_PATH}`);
+      console.log(`📁 Using LLM config file: ${process.env.MCP_SETTINGS_PATH}`);
     }
 
     this.program.parse(process.argv);
   }
 }
 
-// 在ESM模块中不使用模块检测，直接删除这部分代码
+// In ESM module, do not use module detection, directly delete this part of the code
 export default MCPCliApp;
