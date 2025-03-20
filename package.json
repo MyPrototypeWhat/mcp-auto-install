@@ -22,7 +22,7 @@
   "author": "",
   "license": "MIT",
   "dependencies": {
-    "@modelcontextprotocol/sdk": "^0.3.0",
+    "@modelcontextprotocol/sdk": "^1.7.0",
     "commander": "^11.1.0",
     "node-fetch": "^3.3.2",
     "npx-scope-finder": "^1.0.0",

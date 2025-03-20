@@ -1,16 +1,18 @@
 #!/usr/bin/env node
 
 import { Command } from "commander";
-import { 
-  startServer, 
-  getRegisteredServers, 
+import {
+  startServer,
+  getRegisteredServers,
   handleInstallServer,
   handleRegisterServer,
   handleRemoveServer,
   handleConfigureServer,
-  handleGetServerReadme 
+  handleGetServerReadme,
+  // handleAutoDetect,
+  saveCommandToExternalConfig,
 } from "./server.js";
-import { fileURLToPath } from 'node:url';
+import { fileURLToPath } from "node:url";
 import { MCPServerInfo } from "./types.js";
 
 /**
@@ -73,16 +75,18 @@ export class MCPCliApp {
             command: options.command,
             description: options.description,
             keywords: options.keywords || [],
-            installCommands: options.installCommands
+            installCommands: options.installCommands,
           });
-          
+
           if (result.success) {
             console.log(result.message);
           } else {
             console.error(result.message);
           }
         } catch (error) {
-          console.error(`Error registering server: ${(error as Error).message}`);
+          console.error(
+            `Error registering server: ${(error as Error).message}`
+          );
         }
         process.exit(0);
       });
@@ -119,7 +123,7 @@ export class MCPCliApp {
         try {
           // 获取注册的服务器列表
           const servers = await getRegisteredServers();
-          
+
           if (servers.length === 0) {
             console.log("No MCP servers are registered.");
           } else {
@@ -144,13 +148,19 @@ export class MCPCliApp {
     this.program
       .command("configure <n>")
       .description("Get help configuring an MCP server using LLM assistance")
-      .option("-p, --purpose <text>", "Describe what you want to do with the server")
-      .option("-q, --query <text>", "Specific question about server configuration")
+      .option(
+        "-p, --purpose <text>",
+        "Describe what you want to do with the server"
+      )
+      .option(
+        "-q, --query <text>",
+        "Specific question about server configuration"
+      )
       .action(async (name: string, options) => {
         try {
           const purpose = options.purpose || "general use";
           const query = options.query || "";
-          
+
           const result = await handleConfigureServer({
             serverName: name,
             purpose,
@@ -171,7 +181,9 @@ export class MCPCliApp {
             console.error(result.message);
           }
         } catch (error) {
-          console.error(`Error configuring server: ${(error as Error).message}`);
+          console.error(
+            `Error configuring server: ${(error as Error).message}`
+          );
         }
         process.exit(0);
       });
@@ -183,7 +195,7 @@ export class MCPCliApp {
       .action(async (name: string) => {
         try {
           const result = await handleGetServerReadme({ serverName: name });
-          
+
           if (result.success) {
             console.log(`README for ${name}:`);
             console.log();
@@ -204,7 +216,7 @@ export class MCPCliApp {
       .action(async (name: string) => {
         try {
           const result = await handleRemoveServer({ serverName: name });
-          
+
           if (result.success) {
             console.log(result.message);
           } else {
@@ -212,6 +224,60 @@ export class MCPCliApp {
           }
         } catch (error) {
           console.error(`Error removing server: ${(error as Error).message}`);
+        }
+        process.exit(0);
+      });
+
+    // Add a command to automatically detect and install servers
+    // this.program
+    //   .command("auto <request>")
+    //   .description("Automatically detect and install needed MCP servers based on user request")
+    //   .option("-s, --settings <path>", "Custom path to mcp_settings.json file")
+    //   .action(async (request: string, options) => {
+    //     try {
+    //       console.log("Analyzing request to detect needed MCP servers...");
+    //       const result = await handleAutoDetect({
+    //         userRequest: request,
+    //         settingsPath: options.settings
+    //       });
+
+    //       if (result.success) {
+    //         console.log(`✅ ${result.message}`);
+    //         if (result.serverName && result.readme) {
+    //           console.log(`\nServer: ${result.serverName}`);
+    //           console.log("\n=== README ===");
+    //           console.log(typeof result.readme === 'string'
+    //             ? `${result.readme.substring(0, 500)}...`
+    //             : "README not available in string format.");
+    //           console.log("...");
+    //           console.log("\nFull README available with:");
+    //           console.log(`mcp-auto-install readme ${result.serverName}`);
+    //         }
+    //       } else {
+    //         console.error(`❌ ${result.message}`);
+    //       }
+    //     } catch (error) {
+    //       console.error(`Error during auto-detection: ${(error as Error).message}`);
+    //     }
+    //     process.exit(0);
+    //   });
+
+    // Add a command to save user command to config
+    this.program
+      .command("save-command <server-name> <command>")
+      .description("Save a command for a server to external config file")
+      .action(async (serverName: string, command: string, cmdObj) => {
+        try {
+          console.log(`保存命令到外部配置文件: ${serverName} ${command}`);
+          const result = await saveCommandToExternalConfig(serverName, command);
+
+          if (result.success) {
+            console.log(`✅ ${result.message}`);
+          } else {
+            console.error(`❌ ${result.message}`);
+          }
+        } catch (error) {
+          console.error(`Error saving command: ${(error as Error).message}`);
         }
         process.exit(0);
       });
@@ -244,9 +310,21 @@ export class MCPCliApp {
    * 运行CLI应用
    */
   public run() {
-    // 已经在构造函数中调用了parse，这里不需要额外操作
+    // 检查环境变量
+    if (!process.env.MCP_SETTINGS_PATH) {
+      console.warn("\n⚠️  警告: 环境变量 MCP_SETTINGS_PATH 未设置");
+      console.warn("此环境变量用于指定LLM（如Claude）的MCP服务配置文件路径");
+      console.warn("如需将命令保存到LLM配置文件，请设置此环境变量，例如:");
+      console.warn(
+        'export MCP_SETTINGS_PATH="/Users/username/Library/Application Support/Claude/claude_desktop_config.json"\n'
+      );
+    } else {
+      console.log(`📁 使用LLM配置文件: ${process.env.MCP_SETTINGS_PATH}`);
+    }
+
+    this.program.parse(process.argv);
   }
 }
 
 // 在ESM模块中不使用模块检测，直接删除这部分代码
-export default MCPCliApp; 
+export default MCPCliApp;

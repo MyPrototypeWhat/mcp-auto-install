@@ -8,6 +8,11 @@ export interface MCPServerInfo {
   description: string;
   keywords?: string[];
   installCommands?: string[];
+  commandConfig?: {
+    command: string;
+    args: string[];
+  };
+  readme?: string;
 }
 
 /**
@@ -36,6 +41,10 @@ export interface NpmPackageInfo {
   links?: {
     repository?: string;
     [key: string]: string | undefined;
+  };
+  original?: {
+    readme?: string;
+    [key: string]: unknown;
   };
   [key: string]: unknown;
 } 
